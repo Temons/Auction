@@ -1,0 +1,117 @@
+pragma solidity ^0.4.21;
+
+contract Ownable {
+    address owner;
+    function Ownable() public {
+    owner = msg.sender;
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == owner);
+        _;
+    }
+    function TransferOwnership (address _newOwner) public onlyOwner {
+        require (_newOwner != 0x0);
+        owner = _newOwner;
+    }
+}
+
+contract Auction is Ownable {
+    
+    uint public startTime;
+    uint public finishTime;
+    // auction pitch
+    uint public minBet = 10 finney;
+    // last bet
+    uint public lastDonate = 0 finney;
+
+    // number of people who participated
+    uint256 public numberOfInvestors;
+    
+    // Array of addresses invested in the order of entry
+    address [] public donators;
+    
+    // last bid winner
+    uint256 public MinWinnerDonate;
+    
+    // amount of funds sent by each participant
+    mapping (address => uint256) public ethersOf;
+    
+    // Events
+    event Donate (address indexed bidder, uint256 indexed bid);
+    event Refund(address indexed bidder, uint256 indexed bid);
+    event WithdrawAll (address indexed toWhom, uint256 indexed amount);
+    
+    // The function of changing the time interval of the auction stage
+    // http://www.onlineconversion.com/unix_time.htm
+    function ChangeTimeInUnixGMT (uint _startTime, uint _finishTime) public onlyOwner {
+        require(_finishTime > now);
+        require(_finishTime > _startTime);
+        startTime = _startTime;
+        finishTime = _finishTime;
+    }
+
+    // The function of changing the minBet (in Wei) 
+    // https://etherconverter.online/
+    function ChangeMinBetInWei (uint _minBet) public onlyOwner{
+        minBet = _minBet;
+    }
+
+    // The withdrawal function at the end of the auction
+    function withdrawAll( address toWhom) public onlyOwner {
+        require (now > finishTime);
+        require (toWhom != 0x0);
+        emit WithdrawAll(toWhom, address(this).balance);
+        toWhom.transfer(address(this).balance);
+        }
+    
+    //The function of setting the last winner's bet values, all who are lower - will return their bets (in Wei)
+    function SetMinWinnerDonate (uint256 Stage) onlyOwner public {
+        require (now > finishTime);
+        MinWinnerDonate = Stage;
+        
+    }
+    // Internal money back to investors
+    function refund(address investor) internal {
+        investor.transfer(ethersOf[investor]);
+        emit Refund(investor,ethersOf[investor]);
+        ethersOf[investor] = 0;
+        }
+        
+// Payment acceptance function   
+function() public payable {
+    if (now >= startTime && now < finishTime){
+    acceptPayments(msg.sender, msg.value);
+} else if (now > finishTime){
+    require (msg.value == 0 && MinWinnerDonate != 0);
+    require (ethersOf[msg.sender] != 0);
+    if(ethersOf[msg.sender] < MinWinnerDonate){
+        refund(msg.sender);
+    }
+    else{
+        revert();
+    }
+}
+else {
+    revert();
+}
+}
+   
+          /** @dev payment handler */
+    function acceptPayments(address sender, uint256 value) internal {
+    
+            if (ethersOf[sender] != 0){
+            require (ethersOf[sender] + value >= lastDonate + minBet);
+             lastDonate = ethersOf[sender] + value;
+             ethersOf[sender] += value;
+            } else {
+                require (value >= lastDonate + minBet);
+                lastDonate = value;
+                donators.push(sender);
+                ethersOf[sender] += value;
+                numberOfInvestors = numberOfInvestors + 1;
+            }
+            emit Donate(sender, lastDonate);
+}
+   
+}
